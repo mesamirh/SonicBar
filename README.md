@@ -4,6 +4,9 @@ A lightweight, native macOS menu bar music player for [Subsonic](http://www.subs
 
 ![macOS](https://img.shields.io/badge/macOS-13.0+-blue) ![Swift](https://img.shields.io/badge/Swift-5.9+-orange) ![License](https://img.shields.io/badge/License-MIT-green)
 
+## Screenshot
+<img width="613" height="414" alt="image" src="https://github.com/user-attachments/assets/8dccbb3d-1c41-4219-82d1-8032139e7150" />
+
 ## Features
 
 - 🎵 **Menu Bar Player** — Drops down from the top of your screen, always one hover away
