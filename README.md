@@ -1,6 +1,6 @@
 # SonicBar
 
-A lightweight, native macOS menu bar music player for [Subsonic](http://www.subsonic.org/)/[Navidrome](https://www.navidrome.org/) servers.
+A lightweight, native macOS dynamic notch music player for [Subsonic](http://www.subsonic.org/)/[Navidrome](https://www.navidrome.org/) servers.
 
 ![macOS](https://img.shields.io/badge/macOS-13.0+-blue) ![Swift](https://img.shields.io/badge/Swift-5.9+-orange) ![License](https://img.shields.io/badge/License-MIT-green)
 
