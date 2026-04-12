@@ -6,11 +6,27 @@ let appleRed = Color(red: 255/255, green: 69/255, blue: 58/255)
 
 struct ContentView: View {
     @EnvironmentObject var audioPlayer: AudioPlayer
-    @StateObject private var client = SubsonicClient()
+    @EnvironmentObject var hoverState: HoverState
+    
+    // We store all and switch based on selection
+    @StateObject private var subsonicClient = SubsonicClient()
+    @StateObject private var jellyfinClient = JellyfinClient()
+    @StateObject private var localClient = LocalMusicClient()
+    @State private var selectedServerType: ServerType = .subsonic
+    
+    // Helper to get active client
+    private var client: any MusicClientProtocol {
+        switch selectedServerType {
+        case .subsonic: return subsonicClient
+        case .jellyfin: return jellyfinClient
+        case .local: return localClient
+        }
+    }
+    
     @State private var showSettings = false
     @State private var showPlaylistPopover = false
     @State private var showHiddenMenu = false
-    @State private var playlist: [SubsonicSong] = []
+    @State private var playlist: [MusicSong] = []
     @State private var currentIndex = 0
     @State private var isConnecting = false
     @State private var errorMessage: String?
@@ -18,40 +34,63 @@ struct ContentView: View {
     @State private var isRepeatEnabled = false
     @State private var isShuffleEnabled = true
     
-    @State private var isHovered = false
-    let timer = Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()
+    // Removed internal timer as hover is now event-driven
+    
+    @FocusState private var focusedField: String?
+    
+    private var isFormComplete: Bool {
+        switch selectedServerType {
+        case .subsonic:
+            return !subsonicClient.serverURL.isEmpty && !subsonicClient.username.isEmpty && !subsonicClient.password.isEmpty
+        case .jellyfin:
+            return !jellyfinClient.serverURL.isEmpty && !jellyfinClient.username.isEmpty && !jellyfinClient.password.isEmpty
+        case .local:
+            return !localClient.serverURL.isEmpty
+        }
+    }
+    
+    init() {
+        let saved = UserDefaults.standard.string(forKey: "ActiveServerType") ?? ServerType.subsonic.rawValue
+        _selectedServerType = State(initialValue: ServerType(rawValue: saved) ?? .subsonic)
+    }
     
     var body: some View {
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
                 // Background glass effect
-                RoundedRectangle(cornerRadius: isHovered ? 28 : 12, style: .continuous)
-                    .fill(Color.black.opacity(isHovered ? 0.8 : 0))
+                RoundedRectangle(cornerRadius: hoverState.isHovered ? 28 : 12, style: .continuous)
+                    .fill(Color.black.opacity(hoverState.isHovered ? 0.8 : 0))
                     .background(
-                        RoundedRectangle(cornerRadius: isHovered ? 28 : 12, style: .continuous)
-                            .fill(isHovered ? Material.ultraThinMaterial : Material.regularMaterial)
-                            .opacity(isHovered ? 1.0 : 0.0)
+                        RoundedRectangle(cornerRadius: hoverState.isHovered ? 28 : 12, style: .continuous)
+                            .fill(hoverState.isHovered ? Material.ultraThinMaterial : Material.regularMaterial)
+                            .opacity(hoverState.isHovered ? 1.0 : 0.0)
                     )
-                    .shadow(color: Color.black.opacity(isHovered ? 0.4 : 0), radius: 20, y: 10)
+                    .shadow(color: Color.black.opacity(hoverState.isHovered ? 0.4 : 0), radius: 20, y: 10)
                     .frame(
-                        width: isHovered ? 360 : 175,
-                        height: isHovered ? (showSettings || errorMessage != nil ? 340 : 160) : 32
+                        width: hoverState.isHovered ? 360 : 175,
+                        height: hoverState.isHovered ? (showSettings || client.serverURL.isEmpty || errorMessage != nil ? 340 : 160) : hoverState.notchHeight
                     )
                     .overlay(
                         VStack(spacing: 0) {
-                            Spacer().frame(height: 38)
-                            if client.serverURL.isEmpty || showSettings {
-                                settingsView
-                            } else {
-                                playerView
+                            if hoverState.isHovered {
+                                if !showSettings && !client.serverURL.isEmpty && errorMessage == nil {
+                                    Spacer().frame(height: 38)
+                                }
+                                
+                                if client.serverURL.isEmpty || showSettings {
+                                    settingsView
+                                } else {
+                                    playerView
+                                }
                             }
                         }
-                        .frame(width: 360, height: showSettings || errorMessage != nil ? 340 : 160)
-                        .opacity(isHovered ? 1.0 : 0.0)
-                        .scaleEffect(isHovered ? 1.0 : 0.95, anchor: .top)
+                        .frame(width: 360, height: showSettings || client.serverURL.isEmpty || errorMessage != nil ? 340 : 160)
+                        .clipped()
+                        .opacity(hoverState.isHovered ? 1.0 : 0.0)
+                        .scaleEffect(hoverState.isHovered ? 1.0 : 0.95, anchor: .top)
                     )
             }
-            .animation(.spring(response: 0.35, dampingFraction: 0.72), value: isHovered)
+            .animation(.spring(response: 0.35, dampingFraction: 0.72), value: hoverState.state)
             .animation(.spring(response: 0.35, dampingFraction: 0.72), value: showSettings)
             .animation(.spring(response: 0.35, dampingFraction: 0.72), value: errorMessage)
             
@@ -61,7 +100,7 @@ struct ContentView: View {
         .simultaneousGesture(
             LongPressGesture(minimumDuration: 0.6)
                 .onEnded { _ in
-                    if isHovered && !client.serverURL.isEmpty {
+                    if hoverState.isHovered && !client.serverURL.isEmpty {
                         withAnimation { showHiddenMenu = true }
                     }
                 }
@@ -71,39 +110,76 @@ struct ContentView: View {
                 if showHiddenMenu {
                     ZStack {
                         Color.black.opacity(0.85).background(Material.ultraThinMaterial)
-                        HStack(spacing: 40) {
-                            Button(action: { withAnimation { showSettings = true; showHiddenMenu = false } }) {
-                                VStack { Image(systemName: "gearshape.fill"); Text("Settings").font(.caption) }
+                        
+                        VStack(spacing: 0) {
+                            // Header
+                            VStack(spacing: 2) {
+                                Text("Preferences")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(.white)
+                                Text("Manage your SonicBar settings")
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.4))
                             }
-                            Button(action: { NSApplication.shared.terminate(nil) }) {
-                                VStack { Image(systemName: "power"); Text("Quit").font(.caption) }.foregroundColor(.red)
+                            .padding(.top, 16)
+                            .padding(.bottom, 12)
+                            
+                            // General Actions
+                            VStack(spacing: 8) {
+                                HiddenMenuButton(icon: hoverState.isLockedToNotch ? "lock.fill" : "lock.open.fill", 
+                                                 title: hoverState.isLockedToNotch ? "Unlock Position" : "Lock to Notch") {
+                                    hoverState.isLockedToNotch.toggle()
+                                }
+                                
+                                HiddenMenuButton(icon: "gearshape.fill", title: "Connection Settings") {
+                                    withAnimation { showSettings = true; showHiddenMenu = false }
+                                }
+                                
+                                HiddenMenuButton(icon: "rectangle.portrait.and.arrow.right", title: "Logout / Switch Server") {
+                                    logout()
+                                }
                             }
+                            .padding(.horizontal, 16)
+                            
+                            Spacer().frame(height: 18)
+                            
+                            // Danger Zone
+                            VStack(spacing: 8) {
+                                Text("Danger Zone")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundColor(.white.opacity(0.3))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.leading, 24)
+                                
+                                HiddenMenuButton(icon: "power", title: "Quit App", isDestructive: true) {
+                                    NSApplication.shared.terminate(nil)
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 16)
                         }
-                        .foregroundColor(.white)
                     }
-                    .frame(width: 360, height: 160).cornerRadius(28).offset(y: -130).transition(.opacity)
+                    .frame(width: 340)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .cornerRadius(28)
+                    .offset(y: 0)
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
                 }
             }
         )
-        .onReceive(timer) { _ in
-            let loc = NSEvent.mouseLocation
-            if let screen = NSScreen.main?.frame {
-                let triggerRect = NSRect(x: screen.midX - 105, y: screen.maxY - 35, width: 210, height: 35)
-                let expandedRect = NSRect(x: screen.midX - 200, y: screen.maxY - 360, width: 400, height: 360)
-                
-                let shouldHover = (!isHovered && triggerRect.contains(loc)) || (isHovered && expandedRect.contains(loc)) || showPlaylistPopover
-                
-                if shouldHover != isHovered {
-                    isHovered = shouldHover
-                    if !shouldHover {
-                        showHiddenMenu = false
-                        showPlaylistPopover = false
-                    }
-                    if let window = NSApplication.shared.windows.first {
-                        window.ignoresMouseEvents = !shouldHover
-                    }
-                }
+        .onChange(of: hoverState.state) { _, newState in
+            if newState == .hidden {
+                showHiddenMenu = false
+                showPlaylistPopover = false
+                showSettings = client.serverURL.isEmpty
             }
+        }
+        .onChange(of: showPlaylistPopover) { _, newValue in
+            hoverState.state = newValue ? .interacting : .hovered
+        }
+        .onChange(of: showSettings) { _, newValue in
+            if newValue { hoverState.state = .interacting }
+            NotificationCenter.default.post(name: NSNotification.Name("ToggleSettingsPosition"), object: newValue)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ForcePlayCurrent"))) { _ in
             playCurrentSong()
@@ -122,72 +198,196 @@ struct ContentView: View {
             
             if client.serverURL.isEmpty {
                 showSettings = true
+                // hoverState.state is controlled by NotchTracker, but we can set it here for setup
+                hoverState.state = .interacting
             } else if playlist.isEmpty {
-                validateAndConnect()
+                validateAndConnect(silent: true)
             }
         }
         .preferredColorScheme(.dark)
     }
     
     private var settingsView: some View {
-        VStack(spacing: 8) {
-            Text("Sign in to Navidrome")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(.white)
-                .padding(.bottom, 2)
-            
-            if let errorMsg = errorMessage {
-                Text(errorMsg)
-                    .foregroundColor(appleRed)
+        VStack(spacing: 10) {
+            VStack(spacing: 4) {
+                Text("Connect to your music")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundColor(.white)
+                Text("Select your server provider to begin")
                     .font(.system(size: 11, weight: .medium))
-                    .multilineTextAlignment(.center)
+                    .foregroundColor(.white.opacity(0.35)) // Quieter
             }
+            .padding(.top, 4)
             
-            VStack(spacing: 6) {
-                CustomTextField(placeholder: "Server URL (https://...)", text: $client.serverURL)
-                CustomTextField(placeholder: "Username", text: $client.username)
-                CustomSecureField(placeholder: "Password", text: $client.password)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Server Provider")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.5)) // Quieter
+                    .padding(.leading, 2)
+                
+                Picker("", selection: $selectedServerType) {
+                    ForEach(ServerType.allCases, id: \.self) { type in
+                        Text(type.rawValue).tag(type)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .onChange(of: selectedServerType) { _, newValue in
+                    UserDefaults.standard.set(newValue.rawValue, forKey: "ActiveServerType")
+                }
             }
-            .padding(.bottom, 6)
+            .padding(.horizontal, 28)
+            
+            VStack(spacing: 10) { // Compact
+                if selectedServerType == .subsonic {
+                    VStack(alignment: .leading, spacing: 6) {
+                        GuidedField(label: "Server URL", helper: "Your Subsonic address", placeholder: "https://music.example.com", text: $subsonicClient.serverURL)
+                            .focused($focusedField, equals: "url")
+                        
+                        if let errorMsg = errorMessage {
+                            errorDisplay(errorMsg)
+                        }
+                    }
+                    
+                    GuidedField(label: "Username", text: $subsonicClient.username)
+                        .focused($focusedField, equals: "user")
+                    GuidedSecureField(label: "Password", text: $subsonicClient.password)
+                        .focused($focusedField, equals: "pass")
+                } else if selectedServerType == .jellyfin {
+                    VStack(alignment: .leading, spacing: 6) {
+                        GuidedField(label: "Server URL", helper: "Your Jellyfin server address", placeholder: "https://jellyfin.example.com", text: $jellyfinClient.serverURL)
+                            .focused($focusedField, equals: "url")
+                        
+                        if let errorMsg = errorMessage {
+                            errorDisplay(errorMsg)
+                        }
+                    }
+                    
+                    GuidedField(label: "Username", text: $jellyfinClient.username)
+                        .focused($focusedField, equals: "user")
+                    GuidedSecureField(label: "Password", text: $jellyfinClient.password)
+                        .focused($focusedField, equals: "pass")
+                } else {
+                    // Local Music UI
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Music Directories")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.white.opacity(0.4))
+                        
+                        VStack(spacing: 6) {
+                            let paths = localClient.serverURL.components(separatedBy: ";").filter { !$0.isEmpty }
+                            ForEach(paths, id: \.self) { path in
+                                HStack {
+                                    Image(systemName: "folder.fill")
+                                        .foregroundColor(appleBlue.opacity(0.8))
+                                    Text(URL(fileURLWithPath: path).lastPathComponent)
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.8))
+                                    Spacer()
+                                    Button(action: { removePath(path) }) {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .foregroundColor(.white.opacity(0.2))
+                                    }.buttonStyle(.plain)
+                                }
+                                .padding(8)
+                                .background(Color.white.opacity(0.05))
+                                .cornerRadius(6)
+                            }
+                            
+                            Button(action: { selectFolders() }) {
+                                HStack {
+                                    Image(systemName: "plus.circle.fill")
+                                    Text("Add Directories")
+                                }
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(appleBlue)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background(appleBlue.opacity(0.1))
+                                .cornerRadius(6)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        
+                        if let errorMsg = errorMessage {
+                            errorDisplay(errorMsg)
+                        }
+                    }
+                    .padding(.top, 4)
+                }
+            }
+            .padding(.horizontal, 28)
             
             HStack(spacing: 12) {
                 if !client.serverURL.isEmpty && errorMessage == nil {
                     Button(action: { showSettings = false }) {
                         Text("Cancel")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.white.opacity(0.8))
-                            .frame(width: 80, height: 26)
-                            .background(Color.white.opacity(0.1))
-                            .cornerRadius(6)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.white.opacity(0.6)) // Quieter
+                            .frame(width: 90, height: 32)
+                            .background(Color.white.opacity(0.08))
+                            .cornerRadius(10)
                     }
                     .buttonStyle(.plain)
+                    .disabled(isConnecting)
                 }
                 
-                if isConnecting {
-                    ProgressView().controlSize(.small).frame(width: 80, height: 26)
-                } else {
-                    Button(action: { validateAndConnect() }) {
-                        Text("Connect")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.black)
-                            .frame(width: 80, height: 26)
-                            .background(Color.white.opacity(0.9))
-                            .cornerRadius(6)
+                Button(action: { validateAndConnect() }) {
+                    ZStack {
+                        if isConnecting {
+                            ProgressView().controlSize(.small).colorInvert()
+                        } else {
+                            Text("Connect")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(isFormComplete ? .black : .black.opacity(0.4))
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .keyboardShortcut(.defaultAction)
+                    .frame(width: 140, height: 32)
+                    .background(isFormComplete ? Color.white : Color.white.opacity(0.3))
+                    .cornerRadius(10)
+                    .shadow(color: .black.opacity(0.12), radius: 6, y: 3)
+                }
+                .buttonStyle(.plain)
+                .disabled(!isFormComplete || isConnecting)
+                .keyboardShortcut(.defaultAction)
+            }
+            .padding(.top, 2)
+            .padding(.bottom, 8)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                if client.serverURL.isEmpty {
+                    focusedField = "url"
                 }
             }
         }
-        .padding(.horizontal, 36)
-        .padding(.top, 14)
-        .padding(.bottom, 16)
     }
     
-    private func validateAndConnect() {
-        guard !client.serverURL.isEmpty, !client.username.isEmpty else {
+    private func validateAndConnect(silent: Bool = false) {
+        if selectedServerType == .local {
+            isConnecting = true
+            errorMessage = nil
+            localClient.ping { success, error in
+                isConnecting = false
+                if success {
+                    localClient.saveSettings()
+                    showSettings = false
+                    if !silent { NSSound(named: "Glass")?.play() }
+                    NotificationCenter.default.post(name: NSNotification.Name("ConnectedToServer"), object: nil)
+                    if playlist.isEmpty { loadRadio() }
+                } else {
+                    errorMessage = error ?? "No music found in directories"
+                }
+            }
+            return
+        }
+        
+        guard !client.serverURL.isEmpty || selectedServerType == .local else {
             errorMessage = "Required"
             showSettings = true
+            hoverState.state = .hovered
             return
         }
         isConnecting = true
@@ -198,12 +398,55 @@ struct ContentView: View {
             if success {
                 client.saveSettings()
                 showSettings = false
+                
+                if !silent {
+                   NSSound(named: "Glass")?.play()
+                }
+                
+                NotificationCenter.default.post(name: NSNotification.Name("ConnectedToServer"), object: nil)
+                
                 if playlist.isEmpty { loadRadio() }
             } else {
                 errorMessage = error ?? "Can't connect to server"
                 showSettings = true
+                hoverState.state = .hovered
             }
         }
+    }
+    
+    private func selectFolders() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = true
+        
+        if panel.runModal() == .OK {
+            let newPaths = panel.urls.map { $0.path }
+            var currentPaths = localClient.serverURL.components(separatedBy: ";").filter { !$0.isEmpty }
+            for p in newPaths {
+                if !currentPaths.contains(p) {
+                    currentPaths.append(p)
+                }
+            }
+            localClient.serverURL = currentPaths.joined(separator: ";")
+        }
+    }
+    
+    private func removePath(_ path: String) {
+        var currentPaths = localClient.serverURL.components(separatedBy: ";").filter { !$0.isEmpty }
+        currentPaths.removeAll { $0 == path }
+        localClient.serverURL = currentPaths.joined(separator: ";")
+    }
+    
+    @ViewBuilder
+    private func errorDisplay(_ msg: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "exclamationmark.circle.fill")
+            Text(msg)
+        }
+        .foregroundColor(appleRed)
+        .font(.system(size: 10, weight: .medium))
+        .padding(.leading, 2)
     }
     
     private var playerView: some View {
@@ -341,7 +584,7 @@ struct ContentView: View {
         
         var artURL: URL? = nil
         if let coverArt = song.coverArt {
-            artURL = client.getCoverArtURL(for: coverArt)
+            artURL = client.getCoverArtURL(for: coverArt, size: 300)
         }
         
         // Preload next track
@@ -355,7 +598,7 @@ struct ContentView: View {
             if let nextCover = nextSong.coverArt {
                 let cacheKey = nextCover
                 if ImageCache.shared.get(forKey: cacheKey) == nil {
-                    if let nextArtURL = client.getCoverArtURL(for: nextCover) {
+                    if let nextArtURL = client.getCoverArtURL(for: nextCover, size: 300) {
                         DispatchQueue.global().async {
                             if let data = try? Data(contentsOf: nextArtURL), let image = NSImage(data: data) {
                                 ImageCache.shared.set(image, forKey: cacheKey)
@@ -366,7 +609,7 @@ struct ContentView: View {
             }
         }
         
-        audioPlayer.play(url: streamURL, trackName: song.title, artistName: song.artist ?? "Unknown", artURL: artURL, nextUrl: nextURL)
+        audioPlayer.play(url: streamURL, trackName: song.title, artistName: song.artist, artURL: artURL, nextUrl: nextURL)
     }
     
     private func playNext() {
@@ -384,36 +627,119 @@ struct ContentView: View {
             playCurrentSong()
         }
     }
-}
 
-// Custom UI Inputs for Settings View
-struct CustomTextField: View {
-    var placeholder: String
-    @Binding var text: String
-    var body: some View {
-        TextField(placeholder, text: $text)
-            .textFieldStyle(.plain)
-            .font(.system(size: 12))
-            .padding(.vertical, 6)
-            .padding(.horizontal, 10)
-            .background(Color.white.opacity(0.04))
-            .cornerRadius(6)
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.1), lineWidth: 0.5))
+    private func logout() {
+        withAnimation {
+            client.serverURL = ""
+            client.username = ""
+            client.password = ""
+            client.saveSettings()
+            
+            playlist.removeAll()
+            errorMessage = nil
+            
+            showSettings = true
+            showHiddenMenu = false
+            hoverState.state = .interacting
+        }
+        
+        // Clear Keychain
+        KeychainHelper.shared.delete(account: "Password")
+        
+        NSSound(named: "Glass")?.play()
     }
 }
 
-struct CustomSecureField: View {
-    var placeholder: String
-    @Binding var text: String
+// Subordinate UI Components
+struct HiddenMenuButton: View {
+    let icon: String
+    let title: String
+    var isDestructive: Bool = false
+    let action: () -> Void
+    @State private var isHovered = false
+    
     var body: some View {
-        SecureField(placeholder, text: $text)
-            .textFieldStyle(.plain)
-            .font(.system(size: 12))
-            .padding(.vertical, 6)
-            .padding(.horizontal, 10)
-            .background(Color.white.opacity(0.04))
-            .cornerRadius(6)
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.1), lineWidth: 0.5))
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 14))
+                    .foregroundColor(isDestructive ? Color.red.opacity(0.8) : .white.opacity(0.6))
+                
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(isDestructive ? Color.red.opacity(0.7) : .white.opacity(0.9))
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.white.opacity(0.2))
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(isHovered ? Color.white.opacity(0.08) : Color.white.opacity(0.04))
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { o in isHovered = o }
+    }
+}
+            
+struct GuidedField: View {
+    var label: String
+    var helper: String? = nil
+    var placeholder: String = ""
+    @Binding var text: String
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundColor(.white.opacity(0.4)) 
+                .padding(.leading, 2)
+            
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+                .padding(.vertical, 8)
+                .padding(.horizontal, 12)
+                .background(Color.white.opacity(0.06))
+                .cornerRadius(8)
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.1), lineWidth: 1))
+            
+            if let helper = helper {
+                Text(helper)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundColor(.white.opacity(0.25)) // Quieter
+                    .padding(.leading, 2)
+                    .padding(.top, 1) // More space
+            }
+        }
+    }
+}
+
+struct GuidedSecureField: View {
+    var label: String
+    @Binding var text: String
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundColor(.white.opacity(0.4)) // Quieter
+                .padding(.leading, 2)
+            
+            SecureField("", text: $text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+                .padding(.vertical, 8)
+                .padding(.horizontal, 12)
+                .background(Color.white.opacity(0.06))
+                .cornerRadius(8)
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.1), lineWidth: 1))
+        }
     }
 }
 
@@ -439,7 +765,7 @@ struct CachedImage: View {
         }
         .animation(.easeInOut(duration: 0.25), value: currentCacheKey)
         .onAppear { loadImage() }
-        .onChange(of: cacheKey) { _ in loadImage() }
+        .onChange(of: cacheKey) { _, _ in loadImage() }
     }
     
     private func loadImage() {
@@ -514,14 +840,14 @@ struct VisualizerView: View {
 
 // Library Popover Content Frame
 struct LibraryPopoverView: View {
-    @ObservedObject var client: SubsonicClient
+    let client: any MusicClientProtocol
     @ObservedObject var audioPlayer: AudioPlayer
-    @Binding var playlist: [SubsonicSong]
+    @Binding var playlist: [MusicSong]
     @Binding var currentIndex: Int
     
-    @State private var fetchedAlbums: [SubsonicAlbum] = []
-    @State private var selectedAlbum: SubsonicAlbum?
-    @State private var albumSongs: [SubsonicSong] = []
+    @State private var fetchedAlbums: [MusicAlbum] = []
+    @State private var selectedAlbum: MusicAlbum?
+    @State private var albumSongs: [MusicSong] = []
     
     @State private var isLoading = false
     @State private var errorMessage: String? = nil
@@ -603,7 +929,7 @@ struct LibraryPopoverView: View {
         }.frame(width: 220, height: 260)
     }
     
-    private func fetchSongs(for album: SubsonicAlbum) {
+    private func fetchSongs(for album: MusicAlbum) {
         selectedAlbum = album
         isLoading = true
         errorMessage = nil

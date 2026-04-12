@@ -52,7 +52,7 @@ cat <<EOF > "${APP_NAME}.app/Contents/Info.plist"
 EOF
 
 echo "Compiling Swift files..."
-swiftc SonicBarApp.swift AudioPlayer.swift SubsonicClient.swift ContentView.swift -o "$DIR_NAME/$APP_NAME"
+swiftc SonicBarApp.swift AudioPlayer.swift MusicClient.swift SubsonicClient.swift JellyfinClient.swift LocalMusicClient.swift KeychainHelper.swift NSScreen+Notch.swift HoverState.swift NotchTracker.swift ContentView.swift -o "$DIR_NAME/$APP_NAME"
 
 if [ $? -eq 0 ]; then
     echo "Build successful! Created ${APP_NAME}.app"

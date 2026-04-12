@@ -10,6 +10,7 @@ struct SubsonicSong: Codable, Identifiable {
     let coverArt: String?
     let suffix: String?
     let bitRate: Int?
+    let duration: Int?
 }
 
 struct SubsonicPlaylist: Codable, Identifiable {
@@ -39,15 +40,16 @@ class ImageCache {
     }
 }
 
-class SubsonicClient: ObservableObject {
+class SubsonicClient: MusicClientProtocol {
     @Published var serverURL = UserDefaults.standard.string(forKey: "SubsonicURL") ?? ""
     @Published var username = UserDefaults.standard.string(forKey: "SubsonicUsername") ?? ""
-    @Published var password = UserDefaults.standard.string(forKey: "SubsonicPassword") ?? ""
+    @Published var password = KeychainHelper.shared.read(account: "SubsonicPassword") ?? ""
+    var serverType: ServerType { .subsonic }
     
     func saveSettings() {
         UserDefaults.standard.set(serverURL, forKey: "SubsonicURL")
         UserDefaults.standard.set(username, forKey: "SubsonicUsername")
-        UserDefaults.standard.set(password, forKey: "SubsonicPassword")
+        KeychainHelper.shared.save(password, account: "SubsonicPassword")
     }
     
     private func generateAuthParams() -> String {
@@ -98,7 +100,7 @@ class SubsonicClient: ObservableObject {
         }.resume()
     }
     
-    func getRandomSongs(count: Int = 20, completion: @escaping ([SubsonicSong]?) -> Void) {
+    func getRandomSongs(count: Int = 20, completion: @escaping ([MusicSong]?) -> Void) {
         let urlString = "\(getBaseURL())getRandomSongs?\(generateAuthParams())&size=\(count)"
         guard let url = URL(string: urlString) else {
             completion(nil)
@@ -112,13 +114,14 @@ class SubsonicClient: ObservableObject {
             }
             do {
                 if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let response = json["subsonic-response"] as? [String: Any],
-                   let randomSongs = response["randomSongs"] as? [String: Any],
+                   let resp = json["subsonic-response"] as? [String: Any],
+                   let randomSongs = resp["randomSongs"] as? [String: Any],
                    let songsArray = randomSongs["song"] as? [[String: Any]] {
                     
                     let data = try JSONSerialization.data(withJSONObject: songsArray)
-                    let songs = try JSONDecoder().decode([SubsonicSong].self, from: data)
-                    DispatchQueue.main.async { completion(songs) }
+                    let items = try JSONDecoder().decode([SubsonicSong].self, from: data)
+                    let genericSongs = items.map { MusicSong(id: $0.id, title: $0.title, artist: $0.artist ?? "Unknown", album: nil, coverArt: $0.coverArt, duration: $0.duration) }
+                    DispatchQueue.main.async { completion(genericSongs) }
                 } else {
                     DispatchQueue.main.async { completion(nil) }
                 }
@@ -139,37 +142,7 @@ class SubsonicClient: ObservableObject {
         return URL(string: urlString)
     }
     
-    func getPlaylists(completion: @escaping ([SubsonicPlaylist]?) -> Void) {
-        let urlString = "\(getBaseURL())getPlaylists?\(generateAuthParams())"
-        guard let url = URL(string: urlString) else {
-            completion(nil)
-            return
-        }
-        
-        URLSession.shared.dataTask(with: url) { data, _, error in
-            guard let data = data, error == nil else {
-                DispatchQueue.main.async { completion(nil) }
-                return
-            }
-            do {
-                if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let response = json["subsonic-response"] as? [String: Any],
-                   let playlistsObj = response["playlists"] as? [String: Any],
-                   let array = playlistsObj["playlist"] as? [[String: Any]] {
-                    
-                    let parseData = try JSONSerialization.data(withJSONObject: array)
-                    let items = try JSONDecoder().decode([SubsonicPlaylist].self, from: parseData)
-                    DispatchQueue.main.async { completion(items) }
-                } else {
-                    DispatchQueue.main.async { completion(nil) }
-                }
-            } catch {
-                DispatchQueue.main.async { completion(nil) }
-            }
-        }.resume()
-    }
-    
-    func getAlbumList(completion: @escaping ([SubsonicAlbum]?) -> Void) {
+    func getAlbumList(completion: @escaping ([MusicAlbum]?) -> Void) {
         let urlString = "\(getBaseURL())getAlbumList2?type=newest&size=30&\(generateAuthParams())"
         guard let url = URL(string: urlString) else {
             completion(nil)
@@ -186,13 +159,14 @@ class SubsonicClient: ObservableObject {
                     
                     let parseData = try JSONSerialization.data(withJSONObject: array)
                     let items = try JSONDecoder().decode([SubsonicAlbum].self, from: parseData)
-                    DispatchQueue.main.async { completion(items) }
+                    let genericItems = items.map { MusicAlbum(id: $0.id, name: $0.name, artist: $0.artist, coverArt: $0.coverArt) }
+                    DispatchQueue.main.async { completion(genericItems) }
                 } else { DispatchQueue.main.async { completion(nil) } }
             } catch { DispatchQueue.main.async { completion(nil) } }
         }.resume()
     }
     
-    func getAlbumSongs(id: String, completion: @escaping ([SubsonicSong]?) -> Void) {
+    func getAlbumSongs(id: String, completion: @escaping ([MusicSong]?) -> Void) {
         let urlString = "\(getBaseURL())getAlbum?id=\(id)&\(generateAuthParams())"
         guard let url = URL(string: urlString) else {
             completion(nil)
@@ -209,9 +183,11 @@ class SubsonicClient: ObservableObject {
                     
                     let parseData = try JSONSerialization.data(withJSONObject: array)
                     let items = try JSONDecoder().decode([SubsonicSong].self, from: parseData)
-                    DispatchQueue.main.async { completion(items) }
+                    let genericSongs = items.map { MusicSong(id: $0.id, title: $0.title, artist: $0.artist ?? "Unknown", album: nil, coverArt: $0.coverArt, duration: $0.duration) }
+                    DispatchQueue.main.async { completion(genericSongs) }
                 } else { DispatchQueue.main.async { completion(nil) } }
             } catch { DispatchQueue.main.async { completion(nil) } }
         }.resume()
     }
 }
+

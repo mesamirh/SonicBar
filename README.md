@@ -9,13 +9,13 @@ A lightweight, native macOS dynamic notch music player for [Subsonic](http://www
 
 ## Features
 
-- 🎵 **Menu Bar Player** — Drops down from the top of your screen, always one hover away
-- 🎨 **Native macOS Design** — Glassmorphism, smooth animations, dark mode
-- advancement **Gapless Playback** — AVQueuePlayer with next-track preloading
-- ⌨️ **Media Key Support** — Play/pause/skip from your keyboard
-- 📀 **Library Browser** — Browse albums with cover art thumbnails
-- 🔀 **Radio Mode** — Automatic shuffle with continuous playback
-- 🖼️ **Now Playing Integration** — Album art and track info in Control Center
+- **Menu Bar Player** — Drops down from the top of your screen, always one hover away
+- **Native macOS Design** — Glassmorphism, smooth animations, dark mode 
+- **Gapless Playback** — AVQueuePlayer with next-track preloading
+- **Media Key Support** — Play/pause/skip from your keyboard
+- **Library Browser** — Browse albums with cover art thumbnails
+- **Radio Mode** — Automatic shuffle with continuous playback
+- **Now Playing Integration** — Album art and track info in Control Center
 
 ## Requirements
 
