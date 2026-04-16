@@ -8,13 +8,13 @@ struct ContentView: View {
     @EnvironmentObject var audioPlayer: AudioPlayer
     @EnvironmentObject var hoverState: HoverState
     
-    // We store all and switch based on selection
+    // Client instances
     @StateObject private var subsonicClient = SubsonicClient()
     @StateObject private var jellyfinClient = JellyfinClient()
     @StateObject private var localClient = LocalMusicClient()
     @State private var selectedServerType: ServerType = .subsonic
     
-    // Helper to get active client
+    // Active client helper
     private var client: any MusicClientProtocol {
         switch selectedServerType {
         case .subsonic: return subsonicClient
@@ -57,7 +57,7 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
-                // Background glass effect
+                // Glass effect
                 RoundedRectangle(cornerRadius: hoverState.isHovered ? 28 : 12, style: .continuous)
                     .fill(Color.black.opacity(hoverState.isHovered ? 0.8 : 0))
                     .background(
@@ -124,7 +124,7 @@ struct ContentView: View {
                             .padding(.top, 16)
                             .padding(.bottom, 12)
                             
-                            // General Actions
+                            // Actions
                             VStack(spacing: 8) {
                                 HiddenMenuButton(icon: hoverState.isLockedToNotch ? "lock.fill" : "lock.open.fill", 
                                                  title: hoverState.isLockedToNotch ? "Unlock Position" : "Lock to Notch") {
@@ -143,7 +143,7 @@ struct ContentView: View {
                             
                             Spacer().frame(height: 18)
                             
-                            // Danger Zone
+                            // Danger zone
                             VStack(spacing: 8) {
                                 Text("Danger Zone")
                                     .font(.system(size: 9, weight: .bold))
@@ -182,13 +182,14 @@ struct ContentView: View {
             NotificationCenter.default.post(name: NSNotification.Name("ToggleSettingsPosition"), object: newValue)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ForcePlayCurrent"))) { _ in
-            playCurrentSong()
+            playCurrent()
         }
         .onAppear {
             audioPlayer.onSongEnded = {
                 if isRepeatEnabled {
                     audioPlayer.seek(to: 0.0)
                     audioPlayer.togglePlayPause() // ensure keeps playing
+                    playCurrent()
                 } else {
                     playNext()
                 }
@@ -215,14 +216,14 @@ struct ContentView: View {
                     .foregroundColor(.white)
                 Text("Select your server provider to begin")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white.opacity(0.35)) // Quieter
+                    .foregroundColor(.white.opacity(0.35))
             }
             .padding(.top, 4)
             
             VStack(alignment: .leading, spacing: 6) {
                 Text("Server Provider")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.5)) // Quieter
+                    .foregroundColor(.white.opacity(0.5))
                     .padding(.leading, 2)
                 
                 Picker("", selection: $selectedServerType) {
@@ -238,7 +239,7 @@ struct ContentView: View {
             }
             .padding(.horizontal, 28)
             
-            VStack(spacing: 10) { // Compact
+            VStack(spacing: 10) {
                 if selectedServerType == .subsonic {
                     VStack(alignment: .leading, spacing: 6) {
                         GuidedField(label: "Server URL", helper: "Your Subsonic address", placeholder: "https://music.example.com", text: $subsonicClient.serverURL)
@@ -268,7 +269,7 @@ struct ContentView: View {
                     GuidedSecureField(label: "Password", text: $jellyfinClient.password)
                         .focused($focusedField, equals: "pass")
                 } else {
-                    // Local Music UI
+                    // Local directories
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Music Directories")
                             .font(.system(size: 11, weight: .bold))
@@ -323,7 +324,7 @@ struct ContentView: View {
                     Button(action: { showSettings = false }) {
                         Text("Cancel")
                             .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(.white.opacity(0.6)) // Quieter
+                            .foregroundColor(.white.opacity(0.6))
                             .frame(width: 90, height: 32)
                             .background(Color.white.opacity(0.08))
                             .cornerRadius(10)
@@ -451,7 +452,7 @@ struct ContentView: View {
     
     private var playerView: some View {
         VStack(spacing: 0) {
-            // Main Player
+            // Player info
             HStack(alignment: .center, spacing: 14) {
                 if let artImage = audioPlayer.albumArtImage {
                     Image(nsImage: artImage)
@@ -505,7 +506,7 @@ struct ContentView: View {
             
             Spacer().frame(height: 14)
             
-            // Progress Unit 
+            // Progress bar
             HStack(alignment: .center, spacing: 8) {
                 Text(audioPlayer.currentTimeString)
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
@@ -537,7 +538,7 @@ struct ContentView: View {
             
             Spacer().frame(height: 14)
             
-            // Playback controls
+            // Controls
             HStack(spacing: 30) {
                 HoverButton(systemName: "shuffle", baseOpacity: isShuffleEnabled ? 1.0 : 0.25, baseColor: isShuffleEnabled ? appleBlue : .white, size: 14, weight: .regular) {
                     isShuffleEnabled.toggle()
@@ -549,7 +550,7 @@ struct ContentView: View {
                 
                 HoverButton(systemName: audioPlayer.isPlaying ? "pause.fill" : "play.fill", baseOpacity: 1.0, size: 26, weight: .medium) {
                     if audioPlayer.currentTrackName == nil && !playlist.isEmpty {
-                        playCurrentSong()
+                        playCurrent()
                     } else {
                         audioPlayer.togglePlayPause()
                     }
@@ -572,12 +573,12 @@ struct ContentView: View {
             if let songs = songs, !songs.isEmpty {
                 self.playlist = songs
                 self.currentIndex = 0
-                self.playCurrentSong()
+                self.playCurrent()
             }
         }
     }
     
-    private func playCurrentSong() {
+    private func playCurrent() {
         guard currentIndex >= 0 && currentIndex < playlist.count else { return }
         let song = playlist[currentIndex]
         guard let streamURL = client.getStreamURL(for: song.id) else { return }
@@ -587,14 +588,14 @@ struct ContentView: View {
             artURL = client.getCoverArtURL(for: coverArt, size: 300)
         }
         
-        // Preload next track
+        // Buffer next track
         var nextURL: URL? = nil
         if currentIndex + 1 < playlist.count {
             let nextSong = playlist[currentIndex + 1]
             if let nStream = client.getStreamURL(for: nextSong.id) {
                 nextURL = nStream
             }
-            // Early fetch for next art
+            // Fetch next art early
             if let nextCover = nextSong.coverArt {
                 let cacheKey = nextCover
                 if ImageCache.shared.get(forKey: cacheKey) == nil {
@@ -615,7 +616,7 @@ struct ContentView: View {
     private func playNext() {
         if currentIndex < playlist.count - 1 {
             currentIndex += 1
-            playCurrentSong()
+            playCurrent()
         } else {
             loadRadio()
         }
@@ -624,7 +625,7 @@ struct ContentView: View {
     private func playPrevious() {
         if currentIndex > 0 {
             currentIndex -= 1
-            playCurrentSong()
+            playCurrent()
         }
     }
 
@@ -643,14 +644,14 @@ struct ContentView: View {
             hoverState.state = .interacting
         }
         
-        // Clear Keychain
+        // Wipe Keychain
         KeychainHelper.shared.delete(account: "Password")
         
         NSSound(named: "Glass")?.play()
     }
 }
 
-// Subordinate UI Components
+// UI Components
 struct HiddenMenuButton: View {
     let icon: String
     let title: String
@@ -687,6 +688,7 @@ struct HiddenMenuButton: View {
     }
 }
             
+// Input field with label
 struct GuidedField: View {
     var label: String
     var helper: String? = nil
@@ -712,9 +714,9 @@ struct GuidedField: View {
             if let helper = helper {
                 Text(helper)
                     .font(.system(size: 9, weight: .medium))
-                    .foregroundColor(.white.opacity(0.25)) // Quieter
+                    .foregroundColor(.white.opacity(0.25))
                     .padding(.leading, 2)
-                    .padding(.top, 1) // More space
+                    .padding(.top, 1)
             }
         }
     }
@@ -728,7 +730,7 @@ struct GuidedSecureField: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label)
                 .font(.system(size: 10, weight: .bold))
-                .foregroundColor(.white.opacity(0.4)) // Quieter
+                .foregroundColor(.white.opacity(0.4))
                 .padding(.leading, 2)
             
             SecureField("", text: $text)
@@ -743,7 +745,7 @@ struct GuidedSecureField: View {
     }
 }
 
-// Memory Cached Async Image Support
+// Image with cache support
 struct CachedImage: View {
     let url: URL
     var cacheKey: String
@@ -775,7 +777,7 @@ struct CachedImage: View {
             self.currentCacheKey = cacheKey
             return
         }
-        // Keep old image visible while fetching — no nil flash
+        // Keep old image visible during fetch to avoid flicker
         DispatchQueue.global().async {
             if let data = try? Data(contentsOf: url), let image = NSImage(data: data) {
                 ImageCache.shared.set(image, forKey: cacheKey)

@@ -1,10 +1,8 @@
 import AppKit
 import SwiftUI
 
-// Proven approach: lightweight timer polling NSEvent.mouseLocation
-// This is the exact same technique used in the original working code
-// and by apps like NotchNook. It requires zero permissions.
-// At 20Hz (0.05s), it uses negligible CPU — just one rect.contains() check per tick.
+// Poll mouse location to detect notch hover.
+// 20Hz uses negligible CPU and avoids the need for accessibility permissions.
 class NotchTracker {
     private let hoverState = HoverState.shared
     private var timer: Timer?
@@ -59,7 +57,7 @@ class NotchTracker {
     }
     
     private func startTracking() {
-        // 20Hz — proven lightweight, same as original working code
+        // 20Hz is sufficient for smooth transitions
         timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
             self?.evaluate()
         }
@@ -69,7 +67,7 @@ class NotchTracker {
         let loc = NSEvent.mouseLocation
         let state = hoverState.state
         
-        // Don't interfere when user is interacting (menu/playlist open)
+        // Transition states
         if state == .interacting { return }
         
         let isInTrigger = triggerRect.contains(loc)

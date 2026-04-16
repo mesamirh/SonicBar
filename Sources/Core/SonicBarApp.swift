@@ -39,7 +39,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         hostingView.wantsLayer = true
         hostingView.layer?.backgroundColor = NSColor.clear.cgColor
         
-        // Determine if already connected
+        // Check connection status
         let typeStr = UserDefaults.standard.string(forKey: "ActiveServerType") ?? ServerType.subsonic.rawValue
         let isConnected: Bool
         if typeStr == ServerType.jellyfin.rawValue {
@@ -50,14 +50,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             isConnected = !(UserDefaults.standard.string(forKey: "SubsonicURL") ?? "").isEmpty
         }
         
-        // Use built-in screen for accurate placement
+        // Position at top notch
         let screen = NSScreen.builtIn ?? NSScreen.main ?? NSScreen.screens.first!
         let panelW: CGFloat = 420
         let panelH: CGFloat = 420
         
         let windowRect: NSRect
         if isConnected {
-            // Notch position: centered at top
+            // Centered at top notch
             windowRect = NSRect(
                 x: screen.frame.midX - panelW / 2,
                 y: screen.frame.maxY - panelH,
@@ -65,7 +65,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 height: panelH
             )
         } else {
-            // Setup wizard: centered on screen
+            // Setup wizard centered on screen
             windowRect = NSRect(
                 x: screen.frame.midX - panelW / 2,
                 y: screen.frame.midY - panelH / 2,
@@ -74,7 +74,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             )
         }
         
-        // KEY: .nonactivatingPanel allows hover to work without stealing focus
+        // .nonactivatingPanel prevents stealing focus during hover
         islandWindow = NotchPanel(
             contentRect: windowRect,
             styleMask: [.borderless, .fullSizeContentView, .nonactivatingPanel],
@@ -85,19 +85,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         islandWindow.isOpaque = false
         islandWindow.hasShadow = false
         islandWindow.backgroundColor = .clear
-        // KEY: .popUpMenu level ensures we float above everything just like the original
+        // Float above other windows
         islandWindow.level = .popUpMenu
         islandWindow.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
         islandWindow.contentView = hostingView
         
-        // Start collapsed: don't capture clicks when hidden
+        // Start collapsed: no mouse capture when hidden
         if isConnected {
             islandWindow.ignoresMouseEvents = true
         }
         
         islandWindow.makeKeyAndOrderFront(nil)
         
-        // Initialize tracker AFTER window is set up
+        // Initialize tracker after window setup
         self.tracker = NotchTracker()
         
         // Movement lock toggle

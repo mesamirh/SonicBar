@@ -9,25 +9,19 @@ A lightweight, native macOS dynamic notch music player for [Subsonic](http://www
 
 ## Features
 
-- **Menu Bar Player** — Drops down from the top of your screen, always one hover away
-- **Native macOS Design** — Glassmorphism, smooth animations, dark mode 
-- **Gapless Playback** — AVQueuePlayer with next-track preloading
-- **Media Key Support** — Play/pause/skip from your keyboard
-- **Library Browser** — Browse albums with cover art thumbnails
-- **Radio Mode** — Automatic shuffle with continuous playback
-- **Now Playing Integration** — Album art and track info in Control Center
+- **Menu Bar Player** — One hover away
+- **Native macOS Design** — Glassmorphism, smooth animations
+- **Gapless Playback** — Preloaded next tracks
+- **Media Key Support** — System-wide controls
+- **Library Browser** — Browse albums and art
+- **Now Playing Integration** — System Control Center support
 
 ## Requirements
 
 - macOS 13.0 (Ventura) or later
 - A Subsonic-compatible server (Navidrome, Airsonic, Subsonic, etc.)
 
-## Build
-
-No Xcode required — compiles with `swiftc` directly:
-
 ```bash
-chmod +x build.sh
 ./build.sh
 ```
 
@@ -49,13 +43,14 @@ This creates `SonicBar.app` in the project directory.
 
 ```
 SonicBar/
-├── SonicBarApp.swift      # App entry point & window config
-├── ContentView.swift      # Main UI (player, settings, library)
-├── AudioPlayer.swift      # AVQueuePlayer wrapper & media controls
-├── SubsonicClient.swift   # Subsonic/Navidrome REST API client
-├── build.sh               # Build script (no Xcode needed)
-├── AppIcon.png            # App icon source (1024x1024)
-└── .gitignore
+├── Assets/                 # Static assets (AppIcon)
+├── Sources/
+│   ├── Core/               # App lifecycle and main player logic
+│   ├── UI/                 # SwiftUI views and UI state
+│   ├── Services/           # API clients (Subsonic, Jellyfin, Local)
+│   └── Utils/              # Helpers (Keychain, Notch detection)
+├── build.sh                # Main build script
+└── README.md
 ```
 
 ## License

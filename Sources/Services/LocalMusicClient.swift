@@ -105,7 +105,7 @@ class LocalMusicClient: MusicClientProtocol {
         var duration: Int? = nil
         var coverArtPath: String? = nil
         
-        // Use modern async API for metadata loading (macOS 13+)
+        // Async metadata loading
         let semaphore = DispatchSemaphore(value: 0)
         
         Task {
@@ -148,10 +148,10 @@ class LocalMusicClient: MusicClientProtocol {
             semaphore.signal()
         }
         
-        // Wait with timeout to avoid blocking forever
+        // Timeout fallback
         _ = semaphore.wait(timeout: .now() + 2.0)
         
-        // If no embedded art found, look for external cover files
+        // Check for local cover images
         if coverArtPath == nil {
             let folderURL = url.deletingLastPathComponent()
             let possibleArt = ["cover.jpg", "cover.png", "folder.jpg", "AlbumArt.jpg"]

@@ -31,14 +31,14 @@ class AudioPlayer: ObservableObject {
     
     func play(url: URL, trackName: String, artistName: String, artURL: URL?, nextUrl: URL? = nil) {
         
-        // Check if this track is already preloaded
+        // Check if track is preloaded
         if let player = player, let currentItems = player.items() as [AVPlayerItem]?, currentItems.count > 1 {
             let requestedId = getQueryStringParameter(url: url.absoluteString, param: "id")
             let preloadedUrl = (currentItems[1].asset as? AVURLAsset)?.url
             let queuedId = preloadedUrl != nil ? getQueryStringParameter(url: preloadedUrl!.absoluteString, param: "id") : nil
             
             if requestedId != nil && requestedId == queuedId {
-                // Already in queue, just advance
+                // Advance queue if already there
                 player.advanceToNextItem()
                 
                 // Add next track to queue
@@ -73,7 +73,7 @@ class AudioPlayer: ObservableObject {
             }
         }
         
-        // Buffer initialization for next track
+        // Buffer next track
         if let next = nextUrl {
             let nextItem = AVPlayerItem(url: next)
             if player?.canInsert(nextItem, after: playerItem) == true {
@@ -135,20 +135,20 @@ class AudioPlayer: ObservableObject {
             self.albumArtImage = nil
             return
         }
-        // Extract stable cache key from the cover art id parameter
+        // Stable cache key from ID
         let cacheKey = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "id" })?.value ?? url.absoluteString
         
-        // Check memory cache first — instant
+        // Memory cache check
         if let cached = ImageCache.shared.get(forKey: cacheKey) {
             self.albumArtImage = cached
             return
         }
-        // Fetch in background, update on main
+        // Fetch in background
         DispatchQueue.global().async { [weak self] in
             if let data = try? Data(contentsOf: url), let image = NSImage(data: data) {
                 ImageCache.shared.set(image, forKey: cacheKey)
                 DispatchQueue.main.async {
-                    // Verify URL hasn't changed during fetch
+                    // Verify URL still matches after fetch
                     if self?.albumArtURL == url {
                         self?.albumArtImage = image
                     }
